@@ -39,7 +39,6 @@ from cylc.flow.task_state import (
     TASK_STATUSES_ORDERED,
     TASK_STATUS_DESC,
     TASK_STATUS_WAITING,
-    TASK_STATUS_QUEUED,
     TASK_STATUS_EXPIRED,
     TASK_STATUS_PREPARING,
     TASK_STATUS_SUBMIT_FAILED,
@@ -251,6 +250,7 @@ PROXY_ARGS = {
     'states': List(String, default_value=[]),
     'exstates': List(String, default_value=[]),
     'is_held': Boolean(),
+    'is_queued': Boolean(),
     'mindepth': Int(default_value=-1),
     'maxdepth': Int(default_value=-1),
     'sort': SortArgs(default_value=None),
@@ -264,6 +264,7 @@ ALL_PROXY_ARGS = {
     'states': List(String, default_value=[]),
     'exstates': List(String, default_value=[]),
     'is_held': Boolean(),
+    'is_queued': Boolean(),
     'mindepth': Int(default_value=-1),
     'maxdepth': Int(default_value=-1),
     'sort': SortArgs(default_value=None),
@@ -291,6 +292,7 @@ NODES_EDGES_ARGS = {
     'states': List(String, default_value=[]),
     'exstates': List(String, default_value=[]),
     'is_held': Boolean(),
+    'is_queued': Boolean(),
     'distance': Int(default_value=1),
     'mindepth': Int(default_value=-1),
     'maxdepth': Int(default_value=-1),
@@ -304,7 +306,7 @@ NODES_EDGES_ARGS_ALL = {
     'exids': List(ID, default_value=[]),
     'states': List(String, default_value=[]),
     'exstates': List(String, default_value=[]),
-    'is_held': Boolean(),
+    'is_queued': Boolean(),
     'distance': Int(default_value=1),
     'mindepth': Int(default_value=-1),
     'maxdepth': Int(default_value=-1),
@@ -699,6 +701,7 @@ class Workflow(ObjectType):
     reloaded = Boolean()
     run_mode = String()
     is_held_total = Int()
+    is_queued_total = Int()
     state_totals = GenericScalar(resolver=resolve_state_totals)
     workflow_log_dir = String()
     time_zone_info = Field(TimeZone)
@@ -873,6 +876,7 @@ class TaskProxy(ObjectType):
     state = String()
     cycle_point = String()
     is_held = Boolean()
+    is_queued = Boolean()
     flow_label = String()
     depth = Int()
     job_submits = Int()
@@ -1015,6 +1019,8 @@ class FamilyProxy(ObjectType):
     state_totals = GenericScalar(resolver=resolve_state_totals)
     is_held = Boolean()
     is_held_total = Int()
+    is_queued = Boolean()
+    is_queued_total = Int()
     depth = Int()
     child_tasks = List(
         TaskProxy,
@@ -1333,7 +1339,6 @@ class TaskStatus(Enum):
     # TODO: the task statuses should be formally declared in a Python
     #       enumeration rendering this class unnecessary
     Waiting = TASK_STATUS_WAITING
-    Queued = TASK_STATUS_QUEUED
     Expired = TASK_STATUS_EXPIRED
     Preparing = TASK_STATUS_PREPARING
     SubmitFailed = TASK_STATUS_SUBMIT_FAILED
@@ -1353,6 +1358,9 @@ class TaskState(InputObjectType):
     status = TaskStatus()
     is_held = Boolean(description=sstrip('''
         If a task is held no new job submissions will be made
+    '''))
+    is_queued = Boolean(description=sstrip('''
+        Task is queued for job submission
     '''))
 
 

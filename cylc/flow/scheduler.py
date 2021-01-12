@@ -16,6 +16,7 @@
 """Cylc scheduler server."""
 
 import asyncio
+from copy import copy
 from collections import deque
 from dataclasses import dataclass
 import logging
@@ -273,6 +274,9 @@ class Scheduler:
 
         # create thread sync barrier for setup
         self.barrier = Barrier(3, timeout=10)
+
+        # queue-released tasks yet to complete prep (host select, remote init)
+        self.pre_submit_tasks = []
 
     async def install(self):
         """Get the filesystem in the right state to run the flow.
@@ -1187,21 +1191,34 @@ class Scheduler:
         if self._get_events_conf(self.EVENT_INACTIVITY_TIMEOUT):
             self.set_suite_inactivity_timer()
         if self.stop_mode is None and self.auto_restart_time is None:
-            itasks = self.pool.get_ready_tasks()
-            if itasks:
+            self.pool.queue_tasks_if_ready()
+            # Add newly queue-released tasks to pre_submit_tasks. These get
+            # passed repeatedly to submit_task_jobs until platform remote
+            # init and remote file install have completed.
+            released_tasks = self.pool.release_queued_tasks()
+            for itask in released_tasks:
+                # Status has changed to PREPARING
+                self.data_store_mgr.delta_task_state(itask)
+                self.data_store_mgr.delta_task_queued(itask)
+
+            for itask in copy(self.pre_submit_tasks):
+                if not itask.waiting_on_job_prep:
+                    self.pre_submit_tasks.remove(itask)
+
+            self.pre_submit_tasks += released_tasks
+            if self.pre_submit_tasks:
                 self.is_updated = True
-            self.task_job_mgr.task_remote_mgr.rsync_includes = (
-                self.config.get_validated_rsync_includes())
-            for itask in self.task_job_mgr.submit_task_jobs(
-                    self.suite,
-                    itasks,
-                    self.curve_auth,
-                    self.client_pub_key_dir,
-                    self.config.run_mode('simulation')
-            ):
-                # TODO log itask.flow_label here (beware effect on ref tests)
-                LOG.info('[%s] -triggered off %s',
-                         itask, itask.state.get_resolved_dependencies())
+                self.task_job_mgr.task_remote_mgr.rsync_includes = (
+                    self.config.get_validated_rsync_includes())
+                for itask in self.task_job_mgr.submit_task_jobs(
+                        self.suite,
+                        self.pre_submit_tasks,
+                        self.curve_auth,
+                        self.client_pub_key_dir,
+                        self.config.run_mode('simulation')):
+                    # TODO log flow labels here (beware effect on ref tests)
+                    LOG.info('[%s] -triggered off %s',
+                             itask, itask.state.get_resolved_dependencies())
 
         self.broadcast_mgr.expire_broadcast(self.pool.get_min_point())
         self.xtrigger_mgr.housekeep()
